@@ -9,24 +9,47 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <linux/fb.h>
 #include <errno.h>
 #include <arpa/inet.h>
+#include <giblib/giblib.h>
+#include <X11/Xlib.h>
 
 #define HOST "192.168.31.58"
 #define PORT 5899
 #define MAX_LISTEN_FD 256
-#define ABS_DEV_PATH "/dev/fb1"
 
 static int g_listen_fd = -1;
 static int g_client_fd = -1;
-static int g_dev_fd = -1;
-
-static struct fb_var_screeninfo vinfo;
-static struct fb_fix_screeninfo finfo;
 static unsigned int screen_size = 0;
-static unsigned char *screen = NULL;
+static char *screen_buf = NULL;
 
+struct screen {
+    Display *display;
+    Screen *screen;
+    Visual *visual;
+    Colormap colormap;
+    Window root;
+};
+
+void screen_init(struct screen *screen)
+{
+    screen->display = XOpenDisplay(NULL);
+    if (!screen->display) {
+        perror("XOpenDisplay");
+        exit(0);
+    }
+
+    screen->screen = ScreenOfDisplay(screen->display, DefaultScreen(screen->display));
+    screen->visual = DefaultVisual(screen->display, DefaultScreen(screen->display));
+    screen->colormap = DefaultColormap(screen->display, DefaultScreen(screen->display));
+    screen->root = RootWindow(screen->display, DefaultScreen(screen->display));
+
+    imlib_context_set_display(screen->display);
+    imlib_context_set_visual(screen->visual);
+    imlib_context_set_colormap(screen->colormap);
+}
 
 static int do_send(int fd, char *buf, long int len)
 {
@@ -50,11 +73,16 @@ retry:
 
 static void main_loop(void)
 {
-    int addr_len = 0;
+    unsigned int addr_len = 0;
     struct sockaddr_in c_addr;
     char head[4] = {0};
 
-    *(unsigned int *)head = htonl(screen_size);
+    struct screen screen;
+    Imlib_Image image;
+    struct stat fstat;
+    FILE *fp = NULL;
+    int read_len = 0;
+
     do {
         if ((g_client_fd = accept(g_listen_fd, (struct sockaddr *)&c_addr, &addr_len)) < 0) {
             printf("accept() failed! errno=%d", errno);
@@ -63,10 +91,50 @@ static void main_loop(void)
         }
         printf("client_fd=%d, listen_fd=%d\n", g_client_fd, g_listen_fd);
 
-        // send length firstly
-        do_send(g_client_fd, head, sizeof(head));
-        do_send(g_client_fd, screen, screen_size);
+        screen_init(&screen);
+        image = gib_imlib_create_image_from_drawable(screen.root, 0, 0, 0, screen.screen->width, screen.screen->height, 1);
+        imlib_context_set_image(image);
+        imlib_image_set_format("jpeg");
+        imlib_save_image("/tmp/screen.jpeg");
+        imlib_free_image();
 
+        // send length firstly
+        if (stat("/tmp/screen.jpeg", &fstat) < 0) {
+            printf("stat() failed! errno=%d\n", errno);
+            close(g_client_fd);
+            continue;
+        }
+
+        screen_size = fstat.st_size;
+        *(unsigned int *)head = htonl(screen_size);
+        do_send(g_client_fd, head, sizeof(head));
+
+        // send /tmp/screen.jpeg to client
+        if (!(screen_buf = malloc(screen_size))) {
+            printf("Out of memory!\n");
+            close(g_client_fd);
+            continue;
+        }
+        memset(screen_buf, 0, screen_size);
+
+        if ((fp = fopen("/tmp/screen.jpeg", "rb")) < 0) {
+            printf("Open /tmp/screen.jpeg failed! errno=%d\n", errno);
+            close(g_client_fd);
+            free(screen_buf);
+            continue;
+        }
+
+        if ((read_len = fread(screen_buf, screen_size, 1, fp)) <= 0) {
+            printf("read /tmp/screen.jpeg failed! errno=%d\n", errno);
+            close(g_client_fd);
+            free(screen_buf);
+            continue;
+        }
+
+        do_send(g_client_fd, screen_buf, screen_size);
+        unlink("/tmp/screen.jpeg");
+        close(g_client_fd);
+        free(screen_buf);
     } while (1);
 }
 
@@ -78,17 +146,6 @@ int main(int argc, const char *argv[])
     struct linger r;
     r.l_onoff = 1;
     r.l_linger = 0;
-
-    int read_len = 0;
-    int tmp_len = 0;
-
-    unsigned long i = 0;
-
-    // open fb device
-    if ((g_dev_fd = open(ABS_DEV_PATH, O_RDONLY)) < 0) {
-        printf("open dev(%s) failed! errno=%d\n", ABS_DEV_PATH, errno);
-        return 0;
-    }
 
     // open listen socket
     if ((g_listen_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -121,59 +178,6 @@ int main(int argc, const char *argv[])
         printf("listen failed, errno=%d\n", errno);
         return 0;
     }
-
-    // get dev info
-    if (ioctl(g_dev_fd, FBIOGET_FSCREENINFO, &finfo) < 0) {
-        printf("ioctl() FBIOGET_FSCREENINFO failed! errno=%d\n", errno);
-        return 0;
-    }
-    printf("smem_len:%d\n", finfo.smem_len);
-    printf("line_length:%d\n", finfo.line_length);
-
-    if (ioctl(g_dev_fd, FBIOGET_VSCREENINFO, &vinfo) < 0) {
-        printf("ioctl() FBIOGET_VSCREENINFO failed! errno=%d\n", errno);
-        return 0;
-    }
-    printf("bits_per_pixel:%d\n", vinfo.bits_per_pixel);
-    printf("xres:%d\n", vinfo.xres);
-    printf("yres:%d\n", vinfo.yres);
-    printf("red_length:%d\n", vinfo.red.length);
-    printf("green_length:%d\n", vinfo.green.length);
-    printf("blue_length:%d\n", vinfo.blue.length);
-    printf("transp_length:%d\n", vinfo.transp.length);
-    printf("red_offset:%d\n", vinfo.red.offset);
-    printf("green_offset:%d\n", vinfo.green.offset);
-    printf("blue_offset:%d\n", vinfo.blue.offset);
-    printf("transp_offset:%d\n", vinfo.transp.offset);
-    printf("xoffset:%d\n", vinfo.xoffset);
-    printf("yoffset:%d\n", vinfo.yoffset);
-
-    screen_size = vinfo.xres * vinfo.yres * vinfo.bits_per_pixel / 8;
-    printf("screen_size=%d\n", screen_size);
-
-#if 0
-    // mmap dev
-    if (!(screen = mmap(0, screen_size, PROT_READ | PROT_WRITE, MAP_SHARED, g_dev_fd, 0))) {
-        printf("mmap() failed! errno=%d\n", errno);
-        return 0;
-    }
-#else
-    if (!(screen = malloc(screen_size))) {
-        printf("malloc(size=%d) failed!\n", screen_size);
-        return 0;
-    }
-    memset(screen, 0, screen_size);
-
-    while (read_len < screen_size &&
-           (tmp_len = read(g_dev_fd, screen + read_len, screen_size - read_len)) > 0)
-        read_len += tmp_len;
-
-    if (read_len < screen_size) {
-        printf("read() failed! errno=%d\n", errno);
-        return 0;
-    }
-
-#endif
 
     main_loop();
 }

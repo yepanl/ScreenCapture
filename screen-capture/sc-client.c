@@ -16,15 +16,11 @@
 #define HOST "192.168.31.58"
 #define PORT 5899
 
-#define IMAGE_PATH "./images/screen-bmp.raw"
-#define IMAGE_BMP  "./images/screen.bmp"
+#define IMAGE_PATH "./images/screen.jpeg"
 
 static int g_sock = -1;
 static char *screen = NULL;
 static unsigned int screen_size = 0;
-
-static int g_dev_fd = -1;
-#define ABS_DEV_PATH "/dev/fb0"
 
 static char head[4];
 
@@ -40,20 +36,6 @@ static void save_image(void)
     return;
 }
 
-static void write_fb(void)
-{
-    int write_len = 0;
-    int tmp_len = 0;
-
-    while (1) {
-        if (write_len < screen_size &&
-            (tmp_len = write(g_dev_fd, screen + write_len, screen_size - write_len)) > 0)
-            write_len += tmp_len;
-
-        printf("write_len=%d\n", write_len);
-    }
-}
-
 int main(int argc, const char *argv[])
 {
     int addr_size;
@@ -62,12 +44,6 @@ int main(int argc, const char *argv[])
     int head_len = 0;
     
     int context_len = 0;
-
-    // open fb device
-    if ((g_dev_fd = open(ABS_DEV_PATH, O_WRONLY)) < 0) {
-        printf("open dev(%s) failed! errno=%d\n", ABS_DEV_PATH, errno);
-        return 0;
-    }
 
     g_sock = socket(PF_INET, SOCK_STREAM, 0);
     if (g_sock < 0) {
@@ -111,8 +87,7 @@ int main(int argc, const char *argv[])
     if (screen_size == context_len) {
         printf("recv_len=%d\n", screen_size);
         close(g_sock);
-        //save_image();
-        write_fb();
+        save_image();
     } else {
         printf("recv() failed! recv_len=%d, errno=%d\n", screen_size, errno);
         close(g_sock);
