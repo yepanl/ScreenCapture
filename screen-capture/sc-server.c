@@ -17,7 +17,7 @@
 #include <X11/Xlib.h>
 
 #define HOST "192.168.31.58"
-#define PORT 5899
+#define PORT 7465
 #define MAX_LISTEN_FD 256
 
 static int g_listen_fd = -1;
@@ -67,7 +67,6 @@ retry:
         printf("send() failed! errno=%d\n", errno);
     }
 
-    printf("send_len=%d\n", send_len);
     return send_len;
 }
 
@@ -85,11 +84,9 @@ static void main_loop(void)
 
     do {
         if ((g_client_fd = accept(g_listen_fd, (struct sockaddr *)&c_addr, &addr_len)) < 0) {
-            printf("accept() failed! errno=%d", errno);
             sleep(1);
             continue;
         }
-        printf("client_fd=%d, listen_fd=%d\n", g_client_fd, g_listen_fd);
 
         screen_init(&screen);
         image = gib_imlib_create_image_from_drawable(screen.root, 0, 0, 0, screen.screen->width, screen.screen->height, 1);
@@ -100,7 +97,6 @@ static void main_loop(void)
 
         // send length firstly
         if (stat("/tmp/screen.jpeg", &fstat) < 0) {
-            printf("stat() failed! errno=%d\n", errno);
             close(g_client_fd);
             continue;
         }
@@ -111,29 +107,26 @@ static void main_loop(void)
 
         // send /tmp/screen.jpeg to client
         if (!(screen_buf = malloc(screen_size))) {
-            printf("Out of memory!\n");
             close(g_client_fd);
             continue;
         }
         memset(screen_buf, 0, screen_size);
 
         if ((fp = fopen("/tmp/screen.jpeg", "rb")) < 0) {
-            printf("Open /tmp/screen.jpeg failed! errno=%d\n", errno);
             close(g_client_fd);
             free(screen_buf);
             continue;
         }
 
         if ((read_len = fread(screen_buf, screen_size, 1, fp)) <= 0) {
-            printf("read /tmp/screen.jpeg failed! errno=%d\n", errno);
             close(g_client_fd);
             free(screen_buf);
             continue;
         }
 
         do_send(g_client_fd, screen_buf, screen_size);
-        unlink("/tmp/screen.jpeg");
         close(g_client_fd);
+        unlink("/tmp/screen.jpeg");
         free(screen_buf);
     } while (1);
 }

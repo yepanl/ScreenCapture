@@ -14,7 +14,7 @@
 #include <arpa/inet.h>
 
 #define HOST "192.168.31.58"
-#define PORT 5899
+#define PORT 7465
 
 #define IMAGE_PATH "./images/screen.jpeg"
 
