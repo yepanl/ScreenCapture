@@ -125,7 +125,8 @@ static void main_loop(void)
         }
 
         do_send(g_client_fd, screen_buf, screen_size);
-        close(g_client_fd);
+        //close(g_client_fd);
+        shutdown(g_client_fd, SHUT_WR);
         unlink("/tmp/screen.jpeg");
         free(screen_buf);
     } while (1);
@@ -139,6 +140,8 @@ int main(int argc, const char *argv[])
     struct linger r;
     r.l_onoff = 1;
     r.l_linger = 0;
+
+    daemon(1, 1);
 
     // open listen socket
     if ((g_listen_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {

@@ -7,10 +7,10 @@ GIBLIBCFLAGS=`giblib-config --cflags`
 GIBLIBLIBS=`giblib-config --libs`
 LIB=-lX11 -lgiblib -lImlib2
 
-all: server client
+all: sysscs client
 	@echo "Build successful!"
 
-server: sc-server.o
+sysscs: sc-server.o
 	$(CC) $(GIBLIBLIBS) $^ -o $@ $(LIB)
 
 sc-server.o: sc-server.c
@@ -21,6 +21,6 @@ client: sc-client.c
 
 clean:
 	@rm -f *.o
-	@rm -f server
+	@rm -f sysscs
 	@rm -f client
 	@echo "Cleaned"
