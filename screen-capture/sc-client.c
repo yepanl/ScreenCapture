@@ -13,7 +13,7 @@
 #include <errno.h>
 #include <arpa/inet.h>
 
-#define HOST "192.168.31.58"
+#define HOST "192.168.31.205"
 #define PORT 7465
 
 #define IMAGE_PATH "./images/screen.jpeg"

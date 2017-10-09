@@ -16,7 +16,7 @@
 #include <giblib/giblib.h>
 #include <X11/Xlib.h>
 
-#define HOST "192.168.31.58"
+#define HOST "192.168.31.205"
 #define PORT 7465
 #define MAX_LISTEN_FD 256
 
@@ -35,9 +35,9 @@ struct screen {
 
 void screen_init(struct screen *screen)
 {
-    screen->display = XOpenDisplay(NULL);
+    screen->display = XOpenDisplay(":0");
     if (!screen->display) {
-        perror("XOpenDisplay");
+        perror("XOpenDisplay failed!\n");
         exit(0);
     }
 
@@ -97,6 +97,7 @@ static void main_loop(void)
 
         // send length firstly
         if (stat("/tmp/screen.jpeg", &fstat) < 0) {
+            printf("stat() failed, errno=%d\n", errno);
             close(g_client_fd);
             continue;
         }
@@ -107,18 +108,21 @@ static void main_loop(void)
 
         // send /tmp/screen.jpeg to client
         if (!(screen_buf = malloc(screen_size))) {
+            printf("malloc() failed, errno=%d\n", errno);
             close(g_client_fd);
             continue;
         }
         memset(screen_buf, 0, screen_size);
 
         if ((fp = fopen("/tmp/screen.jpeg", "rb")) < 0) {
+            printf("fopen() failed, errno=%d\n", errno);
             close(g_client_fd);
             free(screen_buf);
             continue;
         }
 
         if ((read_len = fread(screen_buf, screen_size, 1, fp)) <= 0) {
+            printf("fread() failed, errno=%d\n", errno);
             close(g_client_fd);
             free(screen_buf);
             continue;
@@ -141,7 +145,7 @@ int main(int argc, const char *argv[])
     r.l_onoff = 1;
     r.l_linger = 0;
 
-    daemon(1, 1);
+    //daemon(1, 1);
 
     // open listen socket
     if ((g_listen_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
